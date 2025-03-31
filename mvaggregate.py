@@ -118,7 +118,40 @@ class MVAggregate(nn.Module):
             self.aggregation_model = WeightedAggregate(model=model, feat_dim=feat_dim, lifting_net=lifting_net)
 
     def forward(self, mvimages):
-
+        B, V, C, D, H, W = mvimages.shape # Batch, Views, Channel, Depth, Height, Width
+            
+        # DEBUGGING and FIX
+        print(f"Original shape: {mvimages.shape}, elements: {torch.numel(mvimages)}")
+        print(f"Expected reshape: B*V={B*V}, C={C}, D={D}, H={H}, W={W}")
+        
+        # Try a safer batching approach
+        batched_mvimages = mvimages.view(B*V, C, D, H, W)
+        print(f"Reshaped with view: {batched_mvimages.shape}, elements: {torch.numel(batched_mvimages)}")
+        
+        try:
+            # Use this batched tensor directly instead of batch_tensor
+            model_output = self.model(batched_mvimages)
+            print(f"Model output shape: {model_output.shape}")
+            
+            # Reshape back to (B, V, feat_dim)
+            if len(model_output.shape) == 2:  # If output is [B*V, feat_dim]
+                feat_dim = model_output.shape[1]
+                model_output = model_output.view(B, V, feat_dim)
+            else:
+                # Handle unexpected shapes by flattening
+                feat_dim = model_output.numel() // (B*V)
+                model_output = model_output.reshape(B*V, feat_dim).view(B, V, feat_dim)
+                
+            print(f"Reshaped model output: {model_output.shape}")
+            aux = self.lifting_net(model_output)
+            
+        except RuntimeError as e:
+            print(f"ERROR in forward: {str(e)}")
+            # Try to identify MVIT expected shape
+            if hasattr(self.model, 'patch_embed'):
+                print(f"Patch embed info: {self.model.patch_embed}")
+                raise
+        
         pooled_view, attention = self.aggregation_model(mvimages)
 
         inter = self.inter(pooled_view)
