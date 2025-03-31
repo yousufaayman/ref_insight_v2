@@ -21,16 +21,22 @@ class WeightedAggregate(nn.Module):
         )        
 
         self.relu = nn.ReLU()
-   
-
 
     def forward(self, mvimages):
         B, V, C, D, H, W = mvimages.shape # Batch, Views, Channel, Depth, Height, Width
-        aux = self.lifting_net(unbatch_tensor(self.model(batch_tensor(mvimages, dim=1, squeeze=True)), B, dim=1, unsqueeze=True))
-
+        
+        # Fix for MVIT reshape issue
+        processed_features = []
+        for v in range(V):
+            # Process one view at a time to avoid reshape issues
+            view_features = self.model(mvimages[:, v])  # Process single view
+            processed_features.append(view_features)
+            
+        # Stack along view dimension
+        aux = torch.stack(processed_features, dim=1)  # [B, V, feat_dim]
+        aux = self.lifting_net(aux)
 
         ##################### VIEW ATTENTION #####################
-
         # S = source length 
         # N = batch size
         # E = embedding dimension
@@ -59,19 +65,32 @@ class WeightedAggregate(nn.Module):
 
         return output.squeeze(), final_attention_weights
 
-
 class ViewMaxAggregate(nn.Module):
-    def __init__(self,  model, lifting_net=nn.Sequential()):
+    def __init__(self, model, lifting_net=nn.Sequential()):
         super().__init__()
         self.model = model
         self.lifting_net = lifting_net
 
     def forward(self, mvimages):
         B, V, C, D, H, W = mvimages.shape # Batch, Views, Channel, Depth, Height, Width
-        aux = self.lifting_net(unbatch_tensor(self.model(batch_tensor(mvimages, dim=1, squeeze=True)), B, dim=1, unsqueeze=True))
+        
+        # Fix for MVIT reshape issue - replace the problematic line
+        # Original line:
+        # aux = self.lifting_net(unbatch_tensor(self.model(batch_tensor(mvimages, dim=1, squeeze=True)), B, dim=1, unsqueeze=True))
+        
+        # New implementation:
+        processed_features = []
+        for v in range(V):
+            # Process one view at a time to avoid reshape issues
+            view_features = self.model(mvimages[:, v])  # Process single view
+            processed_features.append(view_features)
+            
+        # Stack along view dimension
+        aux = torch.stack(processed_features, dim=1)  # [B, V, feat_dim]
+        aux = self.lifting_net(aux)
+        
         pooled_view = torch.max(aux, dim=1)[0]
         return pooled_view.squeeze(), aux
-
 
 class ViewAvgAggregate(nn.Module):
     def __init__(self,  model, lifting_net=nn.Sequential()):
@@ -84,7 +103,6 @@ class ViewAvgAggregate(nn.Module):
         aux = self.lifting_net(unbatch_tensor(self.model(batch_tensor(mvimages, dim=1, squeeze=True)), B, dim=1, unsqueeze=True))
         pooled_view = torch.mean(aux, dim=1)
         return pooled_view.squeeze(), aux
-
 
 class MVAggregate(nn.Module):
     def __init__(self,  model, agr_type="max", feat_dim=400, lifting_net=nn.Sequential()):
@@ -118,39 +136,6 @@ class MVAggregate(nn.Module):
             self.aggregation_model = WeightedAggregate(model=model, feat_dim=feat_dim, lifting_net=lifting_net)
 
     def forward(self, mvimages):
-        B, V, C, D, H, W = mvimages.shape # Batch, Views, Channel, Depth, Height, Width
-            
-        # DEBUGGING and FIX
-        print(f"Original shape: {mvimages.shape}, elements: {torch.numel(mvimages)}")
-        print(f"Expected reshape: B*V={B*V}, C={C}, D={D}, H={H}, W={W}")
-        
-        # Try a safer batching approach
-        batched_mvimages = mvimages.view(B*V, C, D, H, W)
-        print(f"Reshaped with view: {batched_mvimages.shape}, elements: {torch.numel(batched_mvimages)}")
-        
-        try:
-            # Use this batched tensor directly instead of batch_tensor
-            model_output = self.model(batched_mvimages)
-            print(f"Model output shape: {model_output.shape}")
-            
-            # Reshape back to (B, V, feat_dim)
-            if len(model_output.shape) == 2:  # If output is [B*V, feat_dim]
-                feat_dim = model_output.shape[1]
-                model_output = model_output.view(B, V, feat_dim)
-            else:
-                # Handle unexpected shapes by flattening
-                feat_dim = model_output.numel() // (B*V)
-                model_output = model_output.reshape(B*V, feat_dim).view(B, V, feat_dim)
-                
-            print(f"Reshaped model output: {model_output.shape}")
-            aux = self.lifting_net(model_output)
-            
-        except RuntimeError as e:
-            print(f"ERROR in forward: {str(e)}")
-            # Try to identify MVIT expected shape
-            if hasattr(self.model, 'patch_embed'):
-                print(f"Patch embed info: {self.model.patch_embed}")
-                raise
         
         pooled_view, attention = self.aggregation_model(mvimages)
 
