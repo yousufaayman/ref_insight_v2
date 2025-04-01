@@ -19,17 +19,23 @@ class HRNetVideoAdapter(nn.Module):
         )
     
     def forward(self, x):
-        # x shape expected: [B, V, C, D, H, W]
-        B, V, C, D, H, W = x.shape
-        
-        # Reshape to process frames individually
-        x_reshaped = x.view(B * V, C, D, H, W)
-        
-        # Select a representative frame (middle frame)
-        x_processed = x_reshaped[:, :, D//2, :, :]  # [B*V, C, H, W]
+        # Handle different possible input shapes
+        if len(x.shape) == 5:
+            # Input shape: [B, V, C, H, W]
+            B, V, C, H, W = x.shape
+            
+            # Reshape to process frames individually
+            x_reshaped = x.view(B * V, C, H, W)
+        elif len(x.shape) == 4:
+            # Input shape: [B, C, H, W]
+            B, C, H, W = x.shape
+            V = 1
+            x_reshaped = x
+        else:
+            raise ValueError(f"Unexpected input shape: {x.shape}")
         
         # Process the frame with HRNet
-        frame_features = self.hrnet_model(x_processed)  # [B*V, 2048]
+        frame_features = self.hrnet_model(x_reshaped)  # [B*V, 2048]
         
         # Reduce feature dimension
         reduced_features = self.feature_reducer(frame_features)  # [B*V, 512]

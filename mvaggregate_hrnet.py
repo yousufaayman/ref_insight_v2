@@ -23,7 +23,17 @@ class WeightedAggregate(nn.Module):
         self.relu = nn.ReLU()
 
     def forward(self, mvimages):
-        B, V, C, D, H, W = mvimages.shape # Batch, Views, Channel, Depth, Height, Width
+        # Handle different possible input shapes
+        if len(mvimages.shape) == 5:
+            # Input shape: [B, V, C, H, W]
+            B, V, C, H, W = mvimages.shape
+        elif len(mvimages.shape) == 4:
+            # Input shape: [B, C, H, W]
+            B, C, H, W = mvimages.shape
+            V = 1
+            mvimages = mvimages.unsqueeze(1)
+        else:
+            raise ValueError(f"Unexpected input shape: {mvimages.shape}")
         
         # Process one view at a time to avoid reshape issues
         processed_features = []
@@ -33,7 +43,7 @@ class WeightedAggregate(nn.Module):
             
         # Stack along view dimension
         aux = torch.stack(processed_features, dim=1)  # [B, V, feat_dim]
-        aux = self.lifting_net(aux)
+        aux = self.lifting_net(aux) if len(self.lifting_net) > 0 else aux
 
         ##################### VIEW ATTENTION #####################
         aux = torch.matmul(aux, self.attention_weights)
@@ -70,7 +80,17 @@ class ViewMaxAggregate(nn.Module):
         self.lifting_net = lifting_net
 
     def forward(self, mvimages):
-        B, V, C, D, H, W = mvimages.shape # Batch, Views, Channel, Depth, Height, Width
+        # Handle different possible input shapes
+        if len(mvimages.shape) == 5:
+            # Input shape: [B, V, C, H, W]
+            B, V, C, H, W = mvimages.shape
+        elif len(mvimages.shape) == 4:
+            # Input shape: [B, C, H, W]
+            B, C, H, W = mvimages.shape
+            V = 1
+            mvimages = mvimages.unsqueeze(1)
+        else:
+            raise ValueError(f"Unexpected input shape: {mvimages.shape}")
         
         # Process one view at a time to avoid reshape issues
         processed_features = []
@@ -80,7 +100,7 @@ class ViewMaxAggregate(nn.Module):
             
         # Stack along view dimension
         aux = torch.stack(processed_features, dim=1)  # [B, V, feat_dim]
-        aux = self.lifting_net(aux)
+        aux = self.lifting_net(aux) if len(self.lifting_net) > 0 else aux
         
         # Ensure pooled view is 2D tensor
         pooled_view = torch.max(aux, dim=1)[0].view(B, -1)
@@ -95,7 +115,17 @@ class ViewAvgAggregate(nn.Module):
         self.lifting_net = lifting_net
 
     def forward(self, mvimages):
-        B, V, C, D, H, W = mvimages.shape # Batch, Views, Channel, Depth, Height, Width
+        # Handle different possible input shapes
+        if len(mvimages.shape) == 5:
+            # Input shape: [B, V, C, H, W]
+            B, V, C, H, W = mvimages.shape
+        elif len(mvimages.shape) == 4:
+            # Input shape: [B, C, H, W]
+            B, C, H, W = mvimages.shape
+            V = 1
+            mvimages = mvimages.unsqueeze(1)
+        else:
+            raise ValueError(f"Unexpected input shape: {mvimages.shape}")
         
         # Process one view at a time to avoid reshape issues
         processed_features = []
@@ -105,7 +135,7 @@ class ViewAvgAggregate(nn.Module):
             
         # Stack along view dimension
         aux = torch.stack(processed_features, dim=1)  # [B, V, feat_dim]
-        aux = self.lifting_net(aux)
+        aux = self.lifting_net(aux) if len(self.lifting_net) > 0 else aux
         
         # Ensure pooled view is 2D tensor
         pooled_view = torch.mean(aux, dim=1).view(B, -1)
@@ -114,7 +144,7 @@ class ViewAvgAggregate(nn.Module):
 
 
 class MVAggregate(nn.Module):
-    def __init__(self,  model, agr_type="max", feat_dim=512, lifting_net=nn.Sequential()):
+    def __init__(self,  model, agr_type="max", feat_dim=512, lifting_net=torch.nn.Sequential()):
         super().__init__()
         self.agr_type = agr_type
 
