@@ -57,7 +57,6 @@ class HRNetMultiViewDataset(Dataset):
         Return weights for offence severity and action classes
         """
         return self.weights_offence_severity, self.weights_action
-        print(f"[DEBUG] Dataset length: {self.length}")
 
     def _debug_video_info(self, video, clip_path):
         """
