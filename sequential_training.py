@@ -6,7 +6,7 @@ from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from dataset import MultiViewDataset
 from train import trainer, evaluation
 import torchvision.transforms as transforms
-from model import MVNetwork
+from mvit_model import MVNetwork
 from hrnet_model import HRNetMVNetwork
 from config.classes import EVENT_DICTIONARY, INVERSE_EVENT_DICTIONARY
 from torchvision.models.video import MViT_V2_S_Weights
