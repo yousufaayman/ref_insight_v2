@@ -6,6 +6,7 @@ from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from SoccerNet.Evaluation.MV_FoulRecognition import evaluate
 import torch
 from dataset import MultiViewDataset
+from dataset_hrnet import HRNetMultiViewDataset  
 from train import trainer, evaluation
 import torch.nn as nn
 import torchvision.transforms as transforms
@@ -138,6 +139,7 @@ def main(*args):
         transformAug = None
 
     # Set up transforms based on the selected backbone
+   # Set up transforms based on the selected backbone
     if backbone_type == 'mvit':
         if pre_model == "r3d_18":
             transforms_model = R3D_18_Weights.KINETICS400_V1.transforms()        
@@ -164,27 +166,43 @@ def main(*args):
         ])
         logging.info("Using standard image transforms for HRNet backbone")
     
-    # Set up datasets based on evaluation mode
+    # Modify dataset selection to use HRNetMultiViewDataset for HRNet
     if only_evaluation == 0:
-        dataset_Test2 = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
-                                         transform_model=transforms_model)
+        if backbone_type == 'mvit':
+            dataset_Test2 = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
+                                             transform_model=transforms_model)
+        else:  # HRNet
+            dataset_Test2 = HRNetMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
+                                                  transform_model=transforms_model)
         
         test_loader2 = torch.utils.data.DataLoader(dataset_Test2,
                                                   batch_size=1, shuffle=False,
                                                   num_workers=max_num_worker, pin_memory=True)
+    
     elif only_evaluation == 1:
-        dataset_Chall = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Chall', num_views=5, 
-                                         transform_model=transforms_model)
-
+        if backbone_type == 'mvit':
+            dataset_Chall = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Chall', num_views=5, 
+                                             transform_model=transforms_model)
+        else:  # HRNet
+            dataset_Chall = HRNetMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Chall', num_views=5, 
+                                                  transform_model=transforms_model)
+        
         chall_loader2 = torch.utils.data.DataLoader(dataset_Chall,
                                                    batch_size=1, shuffle=False,
                                                    num_workers=max_num_worker, pin_memory=True)
+    
     elif only_evaluation == 2:
-        dataset_Test2 = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
-                                         transform_model=transforms_model)
-        dataset_Chall = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Chall', num_views=5, 
-                                         transform_model=transforms_model)
-
+        if backbone_type == 'mvit':
+            dataset_Test2 = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
+                                             transform_model=transforms_model)
+            dataset_Chall = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Chall', num_views=5, 
+                                             transform_model=transforms_model)
+        else:  # HRNet
+            dataset_Test2 = HRNetMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
+                                                  transform_model=transforms_model)
+            dataset_Chall = HRNetMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Chall', num_views=5, 
+                                                  transform_model=transforms_model)
+        
         test_loader2 = torch.utils.data.DataLoader(dataset_Test2,
                                                   batch_size=1, shuffle=False,
                                                   num_workers=max_num_worker, pin_memory=True)
@@ -192,20 +210,28 @@ def main(*args):
         chall_loader2 = torch.utils.data.DataLoader(dataset_Chall,
                                                    batch_size=1, shuffle=False,
                                                    num_workers=max_num_worker, pin_memory=True)
+    
     else:
         # Create Train Validation and Test datasets
-        dataset_Train = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Train',
-                                        num_views=num_views, transform=transformAug, transform_model=transforms_model)
-        dataset_Valid2 = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Valid', num_views=5, 
-                                         transform_model=transforms_model)
-        dataset_Test2 = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
-                                        transform_model=transforms_model)
-
+        if backbone_type == 'mvit':
+            dataset_Train = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Train',
+                                            num_views=num_views, transform=transformAug, transform_model=transforms_model)
+            dataset_Valid2 = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Valid', num_views=5, 
+                                             transform_model=transforms_model)
+            dataset_Test2 = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
+                                            transform_model=transforms_model)
+        else:  # HRNet
+            dataset_Train = HRNetMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Train',
+                                                 num_views=num_views, transform=transformAug, transform_model=transforms_model)
+            dataset_Valid2 = HRNetMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Valid', num_views=5, 
+                                                  transform_model=transforms_model)
+            dataset_Test2 = HRNetMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
+                                                 transform_model=transforms_model)
+        
         # Create the dataloaders for train validation and test datasets
         train_loader = torch.utils.data.DataLoader(dataset_Train,
                                                  batch_size=batch_size, shuffle=True,
                                                  num_workers=max_num_worker, pin_memory=True)
-
         val_loader2 = torch.utils.data.DataLoader(dataset_Valid2,
                                                  batch_size=1, shuffle=False,
                                                  num_workers=max_num_worker, pin_memory=True)
