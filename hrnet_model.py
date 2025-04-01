@@ -46,10 +46,10 @@ class HRNetMVNetwork(torch.nn.Module):
         self.lifting_net = lifting_net
         
         # HRNet feature dimension
-        self.feat_dim = 1024
+        self.feat_dim = 512
         
         # Load HRNet from timm
-        base_model = timm.create_model('hrnet_w32', pretrained=True)
+        base_model = timm.create_model('hrnet_w18', pretrained=True)
         
         # Create a proper feature extractor
         # Instead of trying to extract parts, use the whole model but modify it

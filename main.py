@@ -109,7 +109,7 @@ def main(*args):
                              os.path.join(model_name, 
                              os.path.join(str(num_views), 
                              os.path.join(backbone_type, 
-                             os.path.join(pre_model if backbone_type == 'mvit' else 'hrnet_w32',
+                             os.path.join(pre_model if backbone_type == 'mvit' else 'hrnet_w18',
                              os.path.join(str(LR),
                              "_B" + str(batch_size) + "_F" + str(number_of_frames) + "_S" + "_G" + str(gamma) + "_Step" + str(step_size)))))))
     
