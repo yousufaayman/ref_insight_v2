@@ -2,12 +2,11 @@ import torch
 from torch import nn
 import timm
 from mvaggregate import MVAggregate
-from utils import batch_tensor, unbatch_tensor
 
 class HRNetVideoAdapter(nn.Module):
     """
     Adapter class to make HRNet work with video data.
-    This wraps the HRNet model to handle the temporal dimension and reduce feature dimension.
+    This wraps the HRNet model to handle the temporal dimension.
     """
     def __init__(self, hrnet_model):
         super().__init__()
@@ -20,12 +19,23 @@ class HRNetVideoAdapter(nn.Module):
         )
     
     def forward(self, x):
-        # x shape: [B, C, H, W]
+        # x shape expected: [B, V, C, D, H, W]
+        B, V, C, D, H, W = x.shape
+        
+        # Reshape to process frames individually
+        x_reshaped = x.view(B * V, C, D, H, W)
+        
+        # Select a representative frame (middle frame)
+        x_processed = x_reshaped[:, :, D//2, :, :]  # [B*V, C, H, W]
+        
         # Process the frame with HRNet
-        frame_features = self.hrnet_model(x)  # [B, 2048]
+        frame_features = self.hrnet_model(x_processed)  # [B*V, 2048]
         
         # Reduce feature dimension
-        reduced_features = self.feature_reducer(frame_features)  # [B, 512]
+        reduced_features = self.feature_reducer(frame_features)  # [B*V, 512]
+        
+        # Reshape back to original batch structure
+        reduced_features = reduced_features.view(B, V, -1)  # [B, V, 512]
         
         return reduced_features
 
@@ -58,4 +68,5 @@ class HRNetMVNetwork(torch.nn.Module):
         )
         
     def forward(self, mvimages):
+        # Ensure input is expected shape [B, V, C, D, H, W]
         return self.mvnetwork(mvimages)
