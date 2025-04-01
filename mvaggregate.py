@@ -21,22 +21,16 @@ class WeightedAggregate(nn.Module):
         )        
 
         self.relu = nn.ReLU()
+   
+
 
     def forward(self, mvimages):
         B, V, C, D, H, W = mvimages.shape # Batch, Views, Channel, Depth, Height, Width
-        
-        # Fix for MVIT reshape issue
-        processed_features = []
-        for v in range(V):
-            # Process one view at a time to avoid reshape issues
-            view_features = self.model(mvimages[:, v])  # Process single view
-            processed_features.append(view_features)
-            
-        # Stack along view dimension
-        aux = torch.stack(processed_features, dim=1)  # [B, V, feat_dim]
-        aux = self.lifting_net(aux)
+        aux = self.lifting_net(unbatch_tensor(self.model(batch_tensor(mvimages, dim=1, squeeze=True)), B, dim=1, unsqueeze=True))
+
 
         ##################### VIEW ATTENTION #####################
+
         # S = source length 
         # N = batch size
         # E = embedding dimension
@@ -65,55 +59,32 @@ class WeightedAggregate(nn.Module):
 
         return output.squeeze(), final_attention_weights
 
+
 class ViewMaxAggregate(nn.Module):
-    def __init__(self, model, lifting_net=nn.Sequential()):
+    def __init__(self,  model, lifting_net=nn.Sequential()):
         super().__init__()
         self.model = model
         self.lifting_net = lifting_net
 
     def forward(self, mvimages):
         B, V, C, D, H, W = mvimages.shape # Batch, Views, Channel, Depth, Height, Width
-        
-        # Fix for MVIT reshape issue - replace the problematic line
-        # Original line:
-        # aux = self.lifting_net(unbatch_tensor(self.model(batch_tensor(mvimages, dim=1, squeeze=True)), B, dim=1, unsqueeze=True))
-        
-        # New implementation:
-        processed_features = []
-        for v in range(V):
-            # Process one view at a time to avoid reshape issues
-            view_features = self.model(mvimages[:, v])  # Process single view
-            processed_features.append(view_features)
-            
-        # Stack along view dimension
-        aux = torch.stack(processed_features, dim=1)  # [B, V, feat_dim]
-        aux = self.lifting_net(aux)
-        
+        aux = self.lifting_net(unbatch_tensor(self.model(batch_tensor(mvimages, dim=1, squeeze=True)), B, dim=1, unsqueeze=True))
         pooled_view = torch.max(aux, dim=1)[0]
         return pooled_view.squeeze(), aux
 
+
 class ViewAvgAggregate(nn.Module):
-    def __init__(self, model, lifting_net=nn.Sequential()):
+    def __init__(self,  model, lifting_net=nn.Sequential()):
         super().__init__()
         self.model = model
         self.lifting_net = lifting_net
 
     def forward(self, mvimages):
         B, V, C, D, H, W = mvimages.shape # Batch, Views, Channel, Depth, Height, Width
-        
-        # Fix for MVIT reshape issue
-        processed_features = []
-        for v in range(V):
-            # Process one view at a time to avoid reshape issues
-            view_features = self.model(mvimages[:, v])  # Process single view
-            processed_features.append(view_features)
-            
-        # Stack along view dimension
-        aux = torch.stack(processed_features, dim=1)  # [B, V, feat_dim]
-        aux = self.lifting_net(aux)
-        
+        aux = self.lifting_net(unbatch_tensor(self.model(batch_tensor(mvimages, dim=1, squeeze=True)), B, dim=1, unsqueeze=True))
         pooled_view = torch.mean(aux, dim=1)
         return pooled_view.squeeze(), aux
+
 
 class MVAggregate(nn.Module):
     def __init__(self,  model, agr_type="max", feat_dim=400, lifting_net=nn.Sequential()):
@@ -147,7 +118,7 @@ class MVAggregate(nn.Module):
             self.aggregation_model = WeightedAggregate(model=model, feat_dim=feat_dim, lifting_net=lifting_net)
 
     def forward(self, mvimages):
-        
+
         pooled_view, attention = self.aggregation_model(mvimages)
 
         inter = self.inter(pooled_view)
