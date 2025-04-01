@@ -81,10 +81,15 @@ class HRNetMultiViewDataset(Dataset):
         Select a representative frame from the video sequence with extensive debugging
         """
         # Detailed video debugging
-        self._debug_video_info(video, clip_path)
-
-        # Handle different possible input shapes
+        print(f"\n[VIDEO DEBUG] Clip path: {clip_path}")
+        print(f"[VIDEO DEBUG] Video shape: {video.shape}")
+        print(f"[VIDEO DEBUG] Video dtype: {video.dtype}")
+        print(f"[VIDEO DEBUG] Slice details:")
+        print(f"  Start: {self.start}")
+        print(f"  End: {self.end}")
+        
         try:
+            # Handle different possible input shapes
             if len(video.shape) == 4:
                 # THWC format
                 frames = video[self.start:self.end, :, :, :]
@@ -107,8 +112,12 @@ class HRNetMultiViewDataset(Dataset):
                 frame = frames[mid_frame_index]
                 print(f"[FRAME DEBUG] Selected middle frame (index {mid_frame_index})")
             
-            # Convert to CHW format and normalize to [0, 1]
-            frame = torch.from_numpy(frame).permute(2, 0, 1).float() / 255.0
+            # Handle both numpy and torch tensors
+            if isinstance(frame, np.ndarray):
+                frame = torch.from_numpy(frame)
+            
+            # Ensure correct format and normalization
+            frame = frame.permute(2, 0, 1).float() / 255.0
             
             print(f"[FRAME DEBUG] Final frame shape: {frame.shape}")
             print(f"[FRAME DEBUG] Final frame dtype: {frame.dtype}")
