@@ -155,9 +155,14 @@ def main(*args):
             print("Possible options are: r3d_18, s3d, mc3_18, mvit_v2_s and r2plus1d_18")
             print("We continue with r2plus1d_18")
     else:  # HRNet
-        # Use MVIT transforms for HRNet for consistency
-        transforms_model = MViT_V2_S_Weights.KINETICS400_V1.transforms()
-        logging.info("Using MVIT transforms for HRNet backbone")
+        transforms_model = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],  # Standard ImageNet normalization
+                std=[0.229, 0.224, 0.225]
+            )
+        ])
+        logging.info("Using standard image transforms for HRNet backbone")
     
     # Set up datasets based on evaluation mode
     if only_evaluation == 0:
