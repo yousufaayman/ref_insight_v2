@@ -93,14 +93,25 @@ class ViewMaxAggregate(nn.Module):
         return pooled_view.squeeze(), aux
 
 class ViewAvgAggregate(nn.Module):
-    def __init__(self,  model, lifting_net=nn.Sequential()):
+    def __init__(self, model, lifting_net=nn.Sequential()):
         super().__init__()
         self.model = model
         self.lifting_net = lifting_net
 
     def forward(self, mvimages):
         B, V, C, D, H, W = mvimages.shape # Batch, Views, Channel, Depth, Height, Width
-        aux = self.lifting_net(unbatch_tensor(self.model(batch_tensor(mvimages, dim=1, squeeze=True)), B, dim=1, unsqueeze=True))
+        
+        # Fix for MVIT reshape issue
+        processed_features = []
+        for v in range(V):
+            # Process one view at a time to avoid reshape issues
+            view_features = self.model(mvimages[:, v])  # Process single view
+            processed_features.append(view_features)
+            
+        # Stack along view dimension
+        aux = torch.stack(processed_features, dim=1)  # [B, V, feat_dim]
+        aux = self.lifting_net(aux)
+        
         pooled_view = torch.mean(aux, dim=1)
         return pooled_view.squeeze(), aux
 
