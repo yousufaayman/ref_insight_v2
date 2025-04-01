@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import timm
-from mvaggregate import MVAggregate
+from mvaggregate_hrnet import MVAggregate
 from utils import batch_tensor, unbatch_tensor
 
 
