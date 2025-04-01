@@ -28,6 +28,11 @@ class HRNetMultiViewDataset(Dataset):
             self.weights_action = torch.div(1, self.distribution_action)
         else:
             self.clips = clips2vectormerge(path, split, num_views, [])
+            # Set default weights for challenge set
+            self.weights_offence_severity = torch.ones(4)
+            self.weights_action = torch.ones(8)
+            self.distribution_offence_severity = torch.ones(4)
+            self.distribution_action = torch.ones(8)
 
         self.split = split
         self.start = start
@@ -39,6 +44,19 @@ class HRNetMultiViewDataset(Dataset):
         self.factor = (end - start) / (((end - start) / 25) * fps)
 
         self.length = len(self.clips)
+        print(f"[DEBUG] Dataset length: {self.length}")
+
+    def getDistribution(self):
+        """
+        Return distribution of offence severity and action classes
+        """
+        return self.distribution_offence_severity, self.distribution_action
+
+    def getWeights(self):
+        """
+        Return weights for offence severity and action classes
+        """
+        return self.weights_offence_severity, self.weights_action
         print(f"[DEBUG] Dataset length: {self.length}")
 
     def _debug_video_info(self, video, clip_path):
