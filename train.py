@@ -22,9 +22,14 @@ def trainer(train_loader,
             max_epochs=1000
             ):
     
-
-    logging.info("start training")
-    counter = 0
+    logging.info("Start training")
+    
+    # Ensure the model save directory exists
+    os.makedirs(best_model_path, exist_ok=True)
+    
+    # Track best performance
+    best_validation_score = 0
+    best_model_path_full = None
 
     for epoch in range(epoch_start, max_epochs):
         
@@ -46,9 +51,9 @@ def trainer(train_loader,
             pbar=pbar,
         )
 
-        results = evaluate(os.path.join(path_dataset, "Train", "annotations.json"), prediction_file)
+        training_results = evaluate(os.path.join(path_dataset, "Train", "annotations.json"), prediction_file)
         print("TRAINING")
-        print(results)
+        print(training_results)
 
         ###################### VALIDATION ###################
         prediction_file, loss_action, loss_offence_severity = train(
@@ -58,14 +63,13 @@ def trainer(train_loader,
             optimizer,
             epoch + 1,
             model_name,
-            train = False,
+            train=False,
             set_name="valid"
         )
 
-        results = evaluate(os.path.join(path_dataset, "Valid", "annotations.json"), prediction_file)
+        validation_results = evaluate(os.path.join(path_dataset, "Valid", "annotations.json"), prediction_file)
         print("VALIDATION")
-        print(results)
-
+        print(validation_results)
 
         ###################### TEST ###################
         prediction_file, loss_action, loss_offence_severity = train(
@@ -79,26 +83,66 @@ def trainer(train_loader,
                 set_name="test",
             )
 
-        results = evaluate(os.path.join(path_dataset, "Test", "annotations.json"), prediction_file)
+        test_results = evaluate(os.path.join(path_dataset, "Test", "annotations.json"), prediction_file)
         print("TEST")
-        print(results)
+        print(test_results)
         
-
+        # Step the learning rate scheduler
         scheduler.step()
 
-        counter += 1
-
-        if counter > 3:
-            state = {
+        # Save model periodically and track best model
+        # Use leaderboard_value as the performance metric
+        current_validation_score = validation_results['leaderboard_value']
+        
+        # Save the current model
+        current_model_path = os.path.join(best_model_path, f'model_epoch_{epoch+1}.pth.tar')
+        state = {
             'epoch': epoch + 1,
             'state_dict': model.state_dict(),
             'optimizer': optimizer.state_dict(),
-            'scheduler': scheduler.state_dict()
-            }
-            path_aux = os.path.join(best_model_path, str(epoch+1) + "_model.pth.tar")
-            torch.save(state, path_aux)
+            'scheduler': scheduler.state_dict(),
+            'training_results': training_results,
+            'validation_results': validation_results,
+            'test_results': test_results
+        }
+        torch.save(state, current_model_path)
         
-    pbar.close()    
+        # Update best model if current validation score is better
+        if current_validation_score > best_validation_score:
+            best_validation_score = current_validation_score
+            best_model_path_full = os.path.join(best_model_path, 'best_model.pth.tar')
+            torch.save(state, best_model_path_full)
+            logging.info(f"New best model saved with validation score: {best_validation_score}")
+        
+        # Log epoch results
+        logging.info(f"Epoch {epoch+1} Results:")
+        logging.info(f"Training Leaderboard Score: {training_results['leaderboard_value']}")
+        logging.info(f"Validation Leaderboard Score: {validation_results['leaderboard_value']}")
+        logging.info(f"Test Leaderboard Score: {test_results['leaderboard_value']}")
+        
+        # Optional: Early stopping or other termination conditions
+        if epoch - epoch_start > 10 and best_validation_score < 20:
+            logging.info("Performance not improving. Stopping training.")
+            break
+    
+    pbar.close()
+    
+    # Final model save
+    final_model_path = os.path.join(best_model_path, 'final_model.pth.tar')
+    final_state = {
+        'epoch': max_epochs,
+        'state_dict': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'scheduler': scheduler.state_dict(),
+        'best_validation_score': best_validation_score
+    }
+    torch.save(final_state, final_model_path)
+    logging.info(f"Final model saved to {final_model_path}")
+    
+    # If a best model was found, log its path
+    if best_model_path_full:
+        logging.info(f"Best model saved to {best_model_path_full}")
+    
     return
 
 def train(dataloader,
