@@ -1,42 +1,33 @@
 import torch
 from torch import nn
 import timm
-from mvaggregate_hrnet import MVAggregate
+from mvaggregate import MVAggregate
 from utils import batch_tensor, unbatch_tensor
-
 
 class HRNetVideoAdapter(nn.Module):
     """
     Adapter class to make HRNet work with video data.
-    This wraps the HRNet model to handle the temporal dimension.
+    This wraps the HRNet model to handle the temporal dimension and reduce feature dimension.
     """
     def __init__(self, hrnet_model):
         super().__init__()
         self.hrnet_model = hrnet_model
-        self.temporal_pool = nn.AdaptiveAvgPool1d(1)
+        
+        # Feature dimension reduction layer
+        self.feature_reducer = nn.Sequential(
+            nn.Linear(2048, 512),  # Assuming HRNet W18 outputs 2048 features
+            nn.ReLU()
+        )
     
     def forward(self, x):
-        # x shape: [B, C, T, H, W]
-        B, C, T, H, W = x.shape
+        # x shape: [B, C, H, W]
+        # Process the frame with HRNet
+        frame_features = self.hrnet_model(x)  # [B, 2048]
         
-        # Process each frame with HRNet
-        features = []
-        for t in range(T):
-            # Extract frame
-            frame = x[:, :, t, :, :]  # [B, C, H, W]
-            
-            # Forward through HRNet - now using the model with proper forward method
-            frame_features = self.hrnet_model(frame)  # [B, feat_dim]
-            features.append(frame_features)
+        # Reduce feature dimension
+        reduced_features = self.feature_reducer(frame_features)  # [B, 512]
         
-        # Stack along temporal dimension
-        features = torch.stack(features, dim=2)  # [B, feat_dim, T]
-        
-        # Apply temporal pooling to get video-level features
-        features = self.temporal_pool(features).squeeze(2)  # [B, feat_dim]
-        
-        return features
-
+        return reduced_features
 
 class HRNetMVNetwork(torch.nn.Module):
     def __init__(self, agr_type='max', lifting_net=torch.nn.Sequential()):
@@ -51,10 +42,8 @@ class HRNetMVNetwork(torch.nn.Module):
         # Load HRNet from timm
         base_model = timm.create_model('hrnet_w18', pretrained=True)
         
-        # Create a proper feature extractor
-        # Instead of trying to extract parts, use the whole model but modify it
-        self.backbone = base_model
         # Replace the classifier head with an identity operation
+        self.backbone = base_model
         self.backbone.classifier = nn.Identity()
         
         # Create the video adapter for HRNet
