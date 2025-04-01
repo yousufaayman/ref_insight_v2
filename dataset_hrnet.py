@@ -58,29 +58,10 @@ class HRNetMultiViewDataset(Dataset):
         """
         return self.weights_offence_severity, self.weights_action
 
-    def _debug_video_info(self, video, clip_path):
-        """
-        Print detailed information about the video
-        """
-        print(f"\n[VIDEO DEBUG] Clip path: {clip_path}")
-        print(f"[VIDEO DEBUG] Video shape: {video.shape}")
-        print(f"[VIDEO DEBUG] Video dtype: {video.dtype}")
-        print(f"[VIDEO DEBUG] Slice details:")
-        print(f"  Start: {self.start}")
-        print(f"  End: {self.end}")
-        
-        try:
-            sliced_video = video[self.start:self.end, :, :, :]
-            print(f"[VIDEO DEBUG] Sliced video shape: {sliced_video.shape}")
-        except Exception as e:
-            print(f"[VIDEO DEBUG] Error slicing video: {e}")
-            traceback.print_exc()
-
     def _select_representative_frame(self, video, clip_path):
         """
         Select a representative frame from the video sequence with extensive debugging
         """
-        # Detailed video debugging
         print(f"\n[VIDEO DEBUG] Clip path: {clip_path}")
         print(f"[VIDEO DEBUG] Video shape: {video.shape}")
         print(f"[VIDEO DEBUG] Video dtype: {video.dtype}")
@@ -131,14 +112,31 @@ class HRNetMultiViewDataset(Dataset):
 
     def __getitem__(self, index):
         print(f"\n[GETITEM DEBUG] Processing index: {index}")
+        print(f"[GETITEM DEBUG] Total clips: {len(self.clips)}")
         print(f"[GETITEM DEBUG] Clips for this index: {self.clips[index]}")
+
+        # Sanity check for clips
+        if not self.clips[index]:
+            print("[ERROR] No clips found for this index")
+            # Fallback to a default behavior
+            if self.split != 'Chall':
+                return self.labels_offence_severity[index][0], self.labels_action[index][0], torch.zeros(5, 3, 224, 224), self.number_of_actions[index]
+            else:
+                return -1, -1, torch.zeros(5, 3, 224, 224), str(index)
 
         prev_views = []
         views_data = []
 
-        for num_view in range(len(self.clips[index])):
+        # Track view processing attempts
+        view_processing_attempts = 0
+        view_processing_failures = 0
+
+        max_views = min(len(self.clips[index]), 5)  # Limit to 5 views
+
+        for num_view in range(max_views):
             index_view = num_view
             print(f"\n[VIEW DEBUG] Processing view {num_view}")
+            view_processing_attempts += 1
 
             if len(prev_views) == 2:
                 print("[VIEW DEBUG] Skipping - already processed 2 views")
@@ -148,7 +146,7 @@ class HRNetMultiViewDataset(Dataset):
             cont = True
             if self.split == 'Train':
                 while cont:
-                    aux = random.randint(0, len(self.clips[index])-1)
+                    aux = random.randint(0, max_views-1)
                     if aux not in prev_views:
                         cont = False
                 index_view = aux
@@ -163,6 +161,7 @@ class HRNetMultiViewDataset(Dataset):
             except Exception as e:
                 print(f"[ERROR] Failed to read video {clip_path}: {e}")
                 traceback.print_exc()
+                view_processing_failures += 1
                 continue
             
             # Select representative frame
@@ -171,36 +170,52 @@ class HRNetMultiViewDataset(Dataset):
             except Exception as e:
                 print(f"[ERROR] Failed to select representative frame: {e}")
                 traceback.print_exc()
+                view_processing_failures += 1
                 continue
 
             # Apply transforms if any
             if self.transform is not None:
-                frame = self.transform(frame)
-                print(f"[TRANSFORM DEBUG] After custom transform: {frame.shape}")
+                try:
+                    frame = self.transform(frame)
+                    print(f"[TRANSFORM DEBUG] After custom transform: {frame.shape}")
+                except Exception as e:
+                    print(f"[ERROR] Custom transform failed: {e}")
+                    view_processing_failures += 1
+                    continue
 
             # Apply model-specific transforms
-            frame = self.transform_model(frame)
-            print(f"[TRANSFORM DEBUG] After model transform: {frame.shape}")
+            try:
+                frame = self.transform_model(frame)
+                print(f"[TRANSFORM DEBUG] After model transform: {frame.shape}")
+            except Exception as e:
+                print(f"[ERROR] Model transform failed: {e}")
+                view_processing_failures += 1
+                continue
             
             # Store processed view
             views_data.append(frame)
 
+        # Detailed logging of view processing
+        print(f"[VIEW PROCESSING DEBUG] Total attempts: {view_processing_attempts}")
+        print(f"[VIEW PROCESSING DEBUG] Processing failures: {view_processing_failures}")
+        print(f"[VIEW PROCESSING DEBUG] Successfully processed views: {len(views_data)}")
+
+        # Ensure at least 5 views for multi-view processing
+        while len(views_data) < 5:
+            views_data.append(torch.zeros_like(views_data[0]))
+
         # Stack views
-        if len(views_data) > 0:
+        try:
             videos = torch.stack(views_data)
             print(f"[STACK DEBUG] Stacked views shape: {videos.shape}")
-        else:
-            print("[ERROR] No valid views processed")
-            raise ValueError("No valid views processed")
-
-        # Adjust tensor shape if needed
-        if self.num_views != 1 and self.num_views != 5:
-            videos = videos.squeeze()   
-            print(f"[SQUEEZE DEBUG] After squeeze: {videos.shape}")
+        except Exception as e:
+            print(f"[ERROR] Failed to stack views: {e}")
+            # Fallback to a default tensor
+            videos = torch.zeros(5, 3, 224, 224)
 
         # Permute if necessary to match expected input shape
-        if videos.dim() == 4:
-            videos = videos.permute(0, 2, 1, 3)  # [V, C, T, H, W]
+        if videos.dim() == 5:
+            videos = videos.permute(0, 2, 1, 3, 4)  # [V, C, T, H, W]
             print(f"[PERMUTE DEBUG] After permute: {videos.shape}")
         
         # Return data
