@@ -86,5 +86,11 @@ class HRNetMVNetwork(torch.nn.Module):
         )
         
     def forward(self, mvimages):
-        # Ensure input is expected shape [B, V, C, D, H, W]
+        # Handle different possible input shapes
+        if len(mvimages.shape) == 5:
+            # [B, V, C, H, W] or [B, V, C, T, H, W]
+            B, V, C, *rest = mvimages.shape
+            if len(rest) == 3:  # [B, V, C, T, H, W]
+                mvimages = mvimages[:, :, :, mvimages.shape[3]//2, :, :]  # Select middle frame
+        
         return self.mvnetwork(mvimages)
