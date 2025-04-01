@@ -40,24 +40,24 @@ class HRNetMultiViewDataset(Dataset):
     def getWeights(self):
         return self.weights_offence_severity, self.weights_action
 
-    def _preprocess_video(self, video, start, end, factor):
+    def _select_representative_frame(self, video, start, end, factor):
+        """
+        Select a representative frame from the video sequence
+        """
         # Ensure video is in THWC format
         frames = video[start:end, :, :, :]
         
-        # Select frames based on factor
-        final_frames = []
-        for j in range(len(frames)):
-            if j % factor < 1:
-                final_frames.append(frames[j])
+        # If total frames are less than expected, return the middle frame
+        if len(frames) <= 1:
+            return frames[0].permute(2, 0, 1).float() / 255.0
         
-        # Convert to tensor and permute to TCHW
-        final_frames = torch.stack(final_frames)
-        final_frames = final_frames.permute(0, 3, 1, 2)  # THWC -> TCHW
+        # Select middle frame
+        mid_frame_index = len(frames) // 2
         
-        # Convert to float and scale to [0, 1]
-        final_frames = final_frames.float() / 255.0
+        # Convert to CHW format and normalize to [0, 1]
+        mid_frame = frames[mid_frame_index].permute(2, 0, 1).float() / 255.0
         
-        return final_frames
+        return mid_frame
 
     def __getitem__(self, index):
         prev_views = []
@@ -82,18 +82,18 @@ class HRNetMultiViewDataset(Dataset):
             # Read video with correct pts_unit
             video, _, _ = read_video(self.clips[index][index_view], output_format="THWC", pts_unit='sec')
             
-            # Preprocess video frames
-            final_frames = self._preprocess_video(video, self.start, self.end, self.factor)
+            # Select representative frame
+            frame = self._select_representative_frame(video, self.start, self.end, self.factor)
 
-            # Apply transforms
+            # Apply transforms if any
             if self.transform is not None:
-                final_frames = self.transform(final_frames)
+                frame = self.transform(frame)
 
             # Apply model-specific transforms
-            final_frames = self.transform_model(final_frames)
+            frame = self.transform_model(frame)
             
             # Store processed view
-            views_data.append(final_frames)
+            views_data.append(frame)
 
         # Stack views
         if len(views_data) > 0:
@@ -104,8 +104,6 @@ class HRNetMultiViewDataset(Dataset):
         # Adjust tensor shape if needed
         if self.num_views != 1 and self.num_views != 5:
             videos = videos.squeeze()   
-
-        videos = videos.permute(0, 2, 1, 3, 4)  # Adjust dimensions if needed
 
         if self.split != 'Chall':
             return self.labels_offence_severity[index][0], self.labels_action[index][0], videos, self.number_of_actions[index]
