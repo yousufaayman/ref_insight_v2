@@ -13,7 +13,7 @@ class HRNetVideoAdapter(nn.Module):
     def __init__(self, hrnet_model):
         super().__init__()
         self.hrnet_model = hrnet_model
-        self.temporal_pool = nn.AdaptiveAvgPool3d((1, None, None))
+        self.temporal_pool = nn.AdaptiveAvgPool1d(1)
     
     def forward(self, x):
         # x shape: [B, C, T, H, W]
@@ -25,10 +25,8 @@ class HRNetVideoAdapter(nn.Module):
             # Extract frame
             frame = x[:, :, t, :, :]  # [B, C, H, W]
             
-            # Forward through HRNet
+            # Forward through HRNet - now using the model with proper forward method
             frame_features = self.hrnet_model(frame)  # [B, feat_dim]
-            
-            # Collect features
             features.append(frame_features)
         
         # Stack along temporal dimension
@@ -53,12 +51,14 @@ class HRNetMVNetwork(torch.nn.Module):
         # Load HRNet from timm
         base_model = timm.create_model('hrnet_w64', pretrained=True)
         
-        # Remove the classifier to get features
-        modules = list(base_model.children())[:-1]
-        backbone = nn.Sequential(*modules)
+        # Create a proper feature extractor
+        # Instead of trying to extract parts, use the whole model but modify it
+        self.backbone = base_model
+        # Replace the classifier head with an identity operation
+        self.backbone.classifier = nn.Identity()
         
         # Create the video adapter for HRNet
-        self.video_model = HRNetVideoAdapter(backbone)
+        self.video_model = HRNetVideoAdapter(self.backbone)
         
         # Create the MVAggregate module
         self.mvnetwork = MVAggregate(
