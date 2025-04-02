@@ -6,12 +6,14 @@ from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from SoccerNet.Evaluation.MV_FoulRecognition import evaluate
 import torch
 from dataset import MultiViewDataset
-from dataset_hrnet import HRNetMultiViewDataset  
+from dataset_hrnet import HRNetMultiViewDataset
+from dataset_timesformer import TimesformerMultiViewDataset  
 from train import trainer, evaluation
 import torch.nn as nn
 import torchvision.transforms as transforms
 from mvit_model import MVNetwork
 from hrnet_model import HRNetMVNetwork
+from timesformer_model import TimesformerMVNetwork
 from config.classes import EVENT_DICTIONARY, INVERSE_EVENT_DICTIONARY
 from torchvision.models.video import R3D_18_Weights, MC3_18_Weights
 from torchvision.models.video import R2Plus1D_18_Weights, S3D_Weights
@@ -63,9 +65,9 @@ def checkArguments():
         exit()
         
     # Check backbone model type
-    if args.backbone_type not in ['mvit', 'hrnet']:
+    if args.backbone_type not in ['mvit', 'hrnet', 'timesformer']:
         print("Could not find your desired argument for --backbone_type:")
-        print("Possible arguments are: mvit or hrnet")
+        print("Possible arguments are: mvit, hrnet, or timesformer")
         exit()
 
 
@@ -105,12 +107,12 @@ def main(*args):
         raise ValueError('Invalid log level: %s' % 'INFO')
 
     # Create directory structure for model saving
-    # Include backbone type in the path to keep MVIT and HRNet models separate
+    # Include backbone type in the path to keep models separate
     model_dir = os.path.join("models", 
                              os.path.join(model_name, 
                              os.path.join(str(num_views), 
                              os.path.join(backbone_type, 
-                             os.path.join(pre_model if backbone_type == 'mvit' else 'hrnet_w18',
+                             os.path.join(pre_model if backbone_type == 'mvit' else 'timesformer_base' if backbone_type == 'timesformer' else 'hrnet_w18',
                              os.path.join(str(LR),
                              "_B" + str(batch_size) + "_F" + str(number_of_frames) + "_S" + "_G" + str(gamma) + "_Step" + str(step_size)))))))
     
@@ -139,7 +141,6 @@ def main(*args):
         transformAug = None
 
     # Set up transforms based on the selected backbone
-   # Set up transforms based on the selected backbone
     if backbone_type == 'mvit':
         if pre_model == "r3d_18":
             transforms_model = R3D_18_Weights.KINETICS400_V1.transforms()        
@@ -156,7 +157,7 @@ def main(*args):
             print("Warning: Could not find the desired pretrained model")
             print("Possible options are: r3d_18, s3d, mc3_18, mvit_v2_s and r2plus1d_18")
             print("We continue with r2plus1d_18")
-    else:  # HRNet
+    elif backbone_type == 'hrnet':  
         transforms_model = transforms.Compose([
             transforms.Resize((224, 224)),
             transforms.Normalize(
@@ -165,15 +166,27 @@ def main(*args):
             )
         ])
         logging.info("Using standard image transforms for HRNet backbone")
+    else:  # TimeSformer
+        transforms_model = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],  # Standard ImageNet normalization
+                std=[0.229, 0.224, 0.225]
+            )
+        ])
+        logging.info("Using standard image transforms for TimeSformer backbone")
     
-    # Modify dataset selection to use HRNetMultiViewDataset for HRNet
+    # Modify dataset selection to use appropriate dataset for backbone
     if only_evaluation == 0:
         if backbone_type == 'mvit':
             dataset_Test2 = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
                                              transform_model=transforms_model)
-        else:  # HRNet
+        elif backbone_type == 'hrnet':
             dataset_Test2 = HRNetMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
                                                   transform_model=transforms_model)
+        else:  # TimeSformer
+            dataset_Test2 = TimesformerMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
+                                                        transform_model=transforms_model)
         
         test_loader2 = torch.utils.data.DataLoader(dataset_Test2,
                                                   batch_size=1, shuffle=False,
@@ -183,9 +196,12 @@ def main(*args):
         if backbone_type == 'mvit':
             dataset_Chall = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Chall', num_views=5, 
                                              transform_model=transforms_model)
-        else:  # HRNet
+        elif backbone_type == 'hrnet':
             dataset_Chall = HRNetMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Chall', num_views=5, 
                                                   transform_model=transforms_model)
+        else:  # TimeSformer
+            dataset_Chall = TimesformerMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Chall', num_views=5, 
+                                                        transform_model=transforms_model)
         
         chall_loader2 = torch.utils.data.DataLoader(dataset_Chall,
                                                    batch_size=1, shuffle=False,
@@ -197,11 +213,16 @@ def main(*args):
                                              transform_model=transforms_model)
             dataset_Chall = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Chall', num_views=5, 
                                              transform_model=transforms_model)
-        else:  # HRNet
+        elif backbone_type == 'hrnet':
             dataset_Test2 = HRNetMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
                                                   transform_model=transforms_model)
             dataset_Chall = HRNetMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Chall', num_views=5, 
                                                   transform_model=transforms_model)
+        else:  # TimeSformer
+            dataset_Test2 = TimesformerMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
+                                                        transform_model=transforms_model)
+            dataset_Chall = TimesformerMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Chall', num_views=5, 
+                                                        transform_model=transforms_model)
         
         test_loader2 = torch.utils.data.DataLoader(dataset_Test2,
                                                   batch_size=1, shuffle=False,
@@ -220,13 +241,20 @@ def main(*args):
                                              transform_model=transforms_model)
             dataset_Test2 = MultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
                                             transform_model=transforms_model)
-        else:  # HRNet
+        elif backbone_type == 'hrnet':
             dataset_Train = HRNetMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Train',
                                                  num_views=num_views, transform=transformAug, transform_model=transforms_model)
             dataset_Valid2 = HRNetMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Valid', num_views=5, 
                                                   transform_model=transforms_model)
             dataset_Test2 = HRNetMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
                                                  transform_model=transforms_model)
+        else:  # TimeSformer
+            dataset_Train = TimesformerMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Train',
+                                                       num_views=num_views, transform=transformAug, transform_model=transforms_model)
+            dataset_Valid2 = TimesformerMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Valid', num_views=5, 
+                                                        transform_model=transforms_model)
+            dataset_Test2 = TimesformerMultiViewDataset(path=path, start=start_frame, end=end_frame, fps=fps, split='Test', num_views=5, 
+                                                       transform_model=transforms_model)
         
         # Create the dataloaders for train validation and test datasets
         train_loader = torch.utils.data.DataLoader(dataset_Train,
@@ -247,9 +275,12 @@ def main(*args):
     if backbone_type == 'mvit':
         model = MVNetwork(net_name=pre_model, agr_type=pooling_type).cuda()
         logging.info(f"MVIT model created with pre_model={pre_model}, pooling_type={pooling_type}")
-    else:  # hrnet
+    elif backbone_type == 'hrnet':
         model = HRNetMVNetwork(agr_type=pooling_type).cuda()
         logging.info(f"HRNet model created with pooling_type={pooling_type}")
+    else:  # TimeSformer
+        model = TimesformerMVNetwork(agr_type=pooling_type).cuda()
+        logging.info(f"TimeSformer model created with pooling_type={pooling_type}")
 
     # Load pre-trained weights if provided
     if path_to_model_weights != "":
@@ -359,7 +390,7 @@ if __name__ == '__main__':
     parser.add_argument("--num_views", required=False, type=int, default=5, help="Number of views")
     parser.add_argument("--data_aug", required=False, type=str, default="Yes", help="Data augmentation")
     parser.add_argument("--pre_model", required=False, type=str, default="r2plus1d_18", help="Name of the pretrained model (for MVIT)")
-    parser.add_argument("--backbone_type", required=False, type=str, default="mvit", help="Backbone model type (mvit or hrnet)")
+    parser.add_argument("--backbone_type", required=False, type=str, default="mvit", help="Backbone model type (mvit, hrnet, or timesformer)")
     parser.add_argument("--pooling_type", required=False, type=str, default="max", help="Type of pooling (max, mean, attention)")
     parser.add_argument("--weighted_loss", required=False, type=str, default="Yes", help="If the loss should be weighted")
     parser.add_argument("--start_frame", required=False, type=int, default=0, help="The starting frame")
